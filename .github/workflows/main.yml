@@ -1,0 +1,53 @@
+name: Windows-16GB-Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Dahil Public ang repo, awtomatiko itong makakakuha ng 4 vCPUs at 16GB RAM
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+    # STEP 1: Pagpapalaki ng disk space sa pamamagitan ng pagbura ng unneeded pre-installed SDKs
+    - name: Palakihin ang Disk Space
+      run: |
+        Write-Host "Inililinis ang mga malalaking pre-installed software..."
+        Remove-Item -Recurse -Force "C:\Program Files\Android" -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\CodeQL" -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force "C:\Go" -ErrorAction SilentlyContinue
+        Write-Host "Disk space pagkatapos linisin:"
+        Get-PSDrive C | Select-Object Name, @{Name="Free (GB)";Expression={[math]::round($_.Free/1GB,2)}}
+
+    # STEP 2: Pag-download at pag-install ng Tailscale sa runner
+    - name: I-download at I-install ang Tailscale
+      run: |
+        Invoke-WebRequest -Uri "https://tailscale.com" -OutFile "tailscale-setup.exe"
+        Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/qn" -Wait
+        
+    # STEP 3: Pag-konekta sa iyong Tailscale Network gamit ang Auth Key
+    - name: I-connect sa Tailnet
+      run: |
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --accept-routes
+        
+    # STEP 4: Pag-enable ng Windows Remote Desktop (RDP)
+    - name: I-enable ang Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        
+    # STEP 5: Pag-output ng Device Name at pananatiling buhay ng workflow
+    - name: I-display ang Koneksyon at Panatilihing Buhay
+      run: |
+        $TailscaleIP = (& "C:\Program Files\Tailscale\tailscale.exe" ip -4)
+        Write-Host "=========================================="
+        Write-Host "          TAILSCALE RDP IS READY          "
+        Write-Host "=========================================="
+        Write-Host "Tailscale IP ng RDP: $TailscaleIP"
+        Write-Host "Username           : runneradmin"
+        Write-Host "Password           : (Ito ang default runner password)"
+        Write-Host "=========================================="
+        Write-Host "Puwede mo na itong i-connect gamit ang iyong Tailscale Admin Console o gamit ang IP sa itaas."
+        while ($true) { Start-Sleep -Seconds 60 }
